@@ -5,7 +5,9 @@ import tkinter.font as font
 
 @profile
 def func():
+    global latest
     filename = "saved.txt"
+    latest=""
     try:
         f=open(filename, "r")
         f.close()
@@ -33,22 +35,30 @@ def func():
 
     def clear():
         with open(filename, "w") as f:
-            f.write()
+            f.write("")
     
     def copy():
         ppc.copy(getClip(Lb1.curselection()[0]))
 
+    def saveClip():
+        global latest
+        current = ppc.paste()
+        if current != latest:
+            writeClip(current)
+            latest=current
+        r.after(500,saveClip)
+
     def efunc():
-        b= getBoard()
+        b=getBoard()
         c=1
-        d = Lb1.get(0,Lb1.size()+1)
+        d=Lb1.curselection()
+        Lb1.delete(0, Lb1.size()+1)
         for i in b:
-            if (c,i) not in d:
-                Lb1.insert(c,i)
+            Lb1.insert(c,i)
             c+=1
-        if Lb1.get(0,Lb1.size()+1) != tuple():
-            Lb1.activate(0)
-        r.after(2000,efunc)
+        if d != ():
+            Lb1.activate(d[0])
+        r.after(1000,efunc)
     
     r=Tk()
     r.title("ClipSaver")
@@ -71,6 +81,7 @@ def func():
     L1.grid(row=0,column=0,pady = 10)
 
     efunc()
+    saveClip()
 
     r.mainloop()
 
