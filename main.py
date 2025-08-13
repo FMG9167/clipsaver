@@ -2,78 +2,78 @@ from tkinter import *
 import pyperclip as ppc
 from memory_profiler import profile
 import tkinter.font as font
+import sqlite3, time
+
 
 @profile
 def func():
+    mydb = sqlite3.connect('clipsaver.db')
+    cursor = mydb.cursor()
+    cursor.execute(
+        'CREATE TABLE IF NOT EXISTS unclassified(id INTEGER PRIMARY KEY AUTOINCREMENT, dnt DATETIME NOT NULL, '
+        'clip VARCHAR(65535))')
+    cursor.execute(
+        'CREATE TABLE IF NOT EXISTS personal(id INTEGER PRIMARY KEY AUTOINCREMENT, dnt DATETIME NOT NULL, '
+        'clip VARCHAR(65535))')
+    cursor.execute(
+        'CREATE TABLE IF NOT EXISTS work(id INTEGER PRIMARY KEY AUTOINCREMENT, dnt DATETIME NOT NULL, '
+        'clip VARCHAR(65535))')
+    cursor.execute(
+        'CREATE TABLE IF NOT EXISTS passwords(id INTEGER PRIMARY KEY AUTOINCREMENT, dnt DATETIME NOT NULL, '
+        'clip VARCHAR(65535))')
+    mydb.commit()
+
     global latest, menu
     latest=""
     menu=0
+    delay=50
 
-    try:
-        z = open("unclassified.txt","x")
-        z.close()
-    except FileExistsError:
-        pass
-    try:
-        z = open("personal.txt","x")
-        z.close()
-    except FileExistsError:
-        pass
-    try:
-        z = open("work.txt","x")
-        z.close()
-    except FileExistsError:
-        pass
-    try:
-        z = open("passwords.txt","x")
-        z.close()
-    except FileExistsError:
-        pass
-
-    def getFilename(num):
+    def getTable(num):
         match num:
             case 0:
-                filename="unclassified.txt"
+                table="unclassified"
             case 1:
-                filename="personal.txt"
+                table="personal"
             case 2:
-                filename="work.txt"
+                table="work"
             case 3:
-                filename="passwords.txt"
-        return filename
+                table="passwords"
+        return table
 
-    def getClip(number,num):
-        with open(getFilename(num), "r") as f:
-            l = f.read().split("\n")
-            if number <= len(l):
-                return l[number]
-            else:
-                return "EOF"
+    def getClip(id,num):
+        print("getClip")
+        return cursor.execute("SELECT clip FROM "+getTable(num)+" WHERE id=?;",(id,)).fetchone()[0]
 
     def writeClip(clip,num):
-        with open(getFilename(num), "a") as f:
-            f.write(clip + "\n")
+        print("writeClip")
+        dnt = time.strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("INSERT INTO "+getTable(num)+"(dnt, clip) VALUES(?,?)",(dnt,clip))
+        mydb.commit()
 
     def getBoard(num):
-        with open(getFilename(num), "r") as f:
-            a = f.read().split("\n")[0:-1]
-            for i in range(len(a)):
-                yield str(i+1)+ "       " + a[i]
+        print("getBoard")
+        records = cursor.execute("SELECT count(*) FROM " + getTable(num)).fetchone()[0]
+        query = cursor.execute("SELECT clip FROM " + getTable(num))
+        for i in range(records if records <=50 else 50):
+            yield str(i+1)+ "       " + query.fetchone()[0]
 
     def clear(num):
-        with open(getFilename(num), "w") as f:
-            f.write("")
-    
+        print("clear")
+        cursor.execute("DELETE FROM " + getTable(num))
+        mydb.commit()
+
     def copy(num):
+        print("copy")
         ppc.copy(getClip(Lb1.curselection()[0],num))
 
-    def saveClip(num):
+    def saveClip():
+        print("saveClip")
         global latest
         current = ppc.paste()
         if current != latest:
-            writeClip(current,num)
+            writeClip(current,menu)
             latest=current
-        r.after(50,lambda: writeClip(current,num))
+        r.after(delay,lambda: saveClip())
 
     def changeMenu(num):
         global menu
@@ -89,7 +89,7 @@ def func():
             c+=1
         if d != ():
             Lb1.activate(d[0])
-        r.after(50,listRouter)
+        r.after(delay,listRouter)
 
     def personal():
         b=getBoard(1)
@@ -101,7 +101,7 @@ def func():
             c+=1
         if d != ():
             Lb1.activate(d[0])
-        r.after(1000,listRouter)
+        r.after(delay,listRouter)
 
     def work():
         b=getBoard(2)
@@ -113,7 +113,7 @@ def func():
             c+=1
         if d != ():
             Lb1.activate(d[0])
-        r.after(1000,listRouter)
+        r.after(delay,listRouter)
 
     def passwords():
         b=getBoard(3)
@@ -125,7 +125,7 @@ def func():
             c+=1
         if d != ():
             Lb1.activate(d[0])
-        r.after(1000,listRouter)
+        r.after(delay,listRouter)
 
     def listRouter():
         global menu
@@ -138,6 +138,11 @@ def func():
                 work()
             case 3:
                 passwords()
+
+    def exiting():
+        cursor.close()
+        mydb.close()
+        r.destroy()
 
     
     r=Tk()
@@ -153,7 +158,7 @@ def func():
     B6 = Button(frameMenu, text = "Work", command=lambda: changeMenu(2), font = s)
     B7 = Button(frameMenu, text = "Passwords", command=lambda: changeMenu(3), font = s)
 
-    B1 = Button(frameActions, text = "Close ClipSaver", command=r.destroy, font = s)
+    B1 = Button(frameActions, text = "Close ClipSaver", command=exiting, font = s)
     B2 = Button(frameActions, text = "Copy Selection", command=lambda: copy(menu), font = s)
     B3 = Button(frameActions, text = "Clear Clipboard", command=lambda: clear(menu), font = s)
 
@@ -175,13 +180,28 @@ def func():
     frameActions.grid(row=10,column=0)
 
     listRouter()
-    saveClip(menu)
+    saveClip()
 
     r.mainloop()
 
+def test():
+    mydb=sqlite3.connect("clipsaver.db")
+    c=mydb.cursor()
+    c.execute(
+        'CREATE TABLE IF NOT EXISTS unclassified(id INTEGER PRIMARY KEY AUTOINCREMENT, dnt DATETIME NOT NULL, '
+        'clip VARCHAR(65535))')
+    print(c.execute("SELECT * FROM unclassified").fetchall())
+    c.execute("INSERT INTO unclassified(dnt, clip) VALUES (?, ?)",(time.strftime('%Y-%m-%d %H:%M:%S'), "dem"))
+    mydb.commit()
+    print(c.execute("SELECT * FROM unclassified").fetchall())
+    c.execute("INSERT INTO unclassified(dnt, clip) VALUES (?, ?)",(time.strftime('%Y-%m-%d %H:%M:%S'), "i see"))
+    mydb.commit()
+    print(c.execute("SELECT * FROM unclassified").fetchone())
+
+
 if __name__ == "__main__":
     func()
-
+    # test()
     # 0 -> unclassified
     # 1 -> personal
     # 2 -> work
