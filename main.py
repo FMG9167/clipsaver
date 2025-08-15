@@ -6,7 +6,7 @@ import sqlite3, time
 
 
 @profile
-def func():
+def main():
     mydb = sqlite3.connect('clipsaver.db')
     cursor = mydb.cursor()
     cursor.execute(
@@ -23,10 +23,10 @@ def func():
         'clip VARCHAR(65535))')
     mydb.commit()
 
-    global latest, menu, prev
-    latest = ""
+    global menu, prev, latest
     menu = 0
     prev = 0
+    latest = ""
     delay = 50
     ppc.copy(latest)
 
@@ -42,8 +42,8 @@ def func():
                 table = "passwords"
         return table
 
-    def getClip(id,num):
-        return cursor.execute("SELECT clip FROM " + getTable(num) + " WHERE id = ?;",(id,)).fetchone()
+    def getClip(id):
+        return MainListBox.get(id)
 
     def writeClip(clip,num):
         dnt = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -63,22 +63,48 @@ def func():
         for i in range(records if records <= 50 else 50):
             yield query.fetchone()[0]
 
+    def updateList(num):
+        newClip =  cursor.execute("SELECT clip FROM " + getTable(num) + " ORDER BY dnt DESC").fetchone()[0]
+        MainListBox.insert(MainListBox.size(),newClip)
+
     def clear(num):
         cursor.execute("DELETE FROM " + getTable(num))
         mydb.commit()
+        MainListBox.delete(0, MainListBox.size()+1)
 
-    def copy(num):
+    def copy():
         global latest
-        latest=getClip(MainListBox.curselection()[0],num)
+        latest = getClip(MainListBox.curselection()[0])
         ppc.copy(latest)
 
+    def delete():
+        global menu
+        clip = getClip(MainListBox.curselection()[0])
+        cursor.execute("DELETE FROM " + getTable(menu) + " WHERE clip=?", (clip,))
+        MainListBox.delete(MainListBox.curselection()[0])
+        mydb.commit()
+
     def saveClip():
-        global latest
+        global menu, latest
+
         current = ppc.paste()
-        if current !=  latest:
+
+        if current != latest and (time.strftime("%Y-%m-%d %H:%M:%S"), current) not in cursor.execute("SELECT dnt, clip FROM " + getTable(menu)).fetchall():
             writeClip(current,menu)
             latest = current
-        r.after(delay,lambda: saveClip())
+            updateList(menu)
+
+
+        if MainListBox.curselection() !=  ():
+            CopyButton.configure(state = "normal")
+            DeleteButton.configure(state = "normal")
+            updateMoveFrame()
+        else:
+            CopyButton.configure(state = "disabled")
+            DeleteButton.configure(state = "disabled")
+            updateMoveFrame(1)
+
+        r.after(delay,saveClip)
 
     def changeMenu(num):
         global menu
@@ -105,6 +131,7 @@ def func():
                 PersonalMenuButton.configure(state = "normal")
                 WorkMenuButton.configure(state = "normal")
                 PasswordsMenuButton.configure(state = "disabled")
+        listRouter()
 
 
     def unclassified():
@@ -115,7 +142,6 @@ def func():
             if i not in d:
                 MainListBox.insert(c,i)
             c += 1
-        r.after(delay,listRouter)
 
     def personal():
         b = getBoard(1)
@@ -125,7 +151,6 @@ def func():
             if i not in d:
                 MainListBox.insert(c,i)
             c += 1
-        r.after(delay,listRouter)
 
     def work():
         b = getBoard(2)
@@ -135,7 +160,6 @@ def func():
             if i not in d:
                 MainListBox.insert(c,i)
             c += 1
-        r.after(delay,listRouter)
 
     def passwords():
         b = getBoard(3)
@@ -145,7 +169,6 @@ def func():
             if i not in d:
                 MainListBox.insert(c,i)
             c += 1
-        r.after(delay,listRouter)
 
     def updateMoveFrame(do = 0):
         global menu
@@ -182,18 +205,9 @@ def func():
     def listRouter():
         global menu, prev
 
-        if MainListBox.curselection() != ():
-            updateMoveFrame()
-        else:
-            updateMoveFrame(1)
-
         if prev !=  menu:
             MainListBox.delete(0,MainListBox.size()+1)
             prev = menu
-        if MainListBox.curselection() !=  ():
-            CopyButton.configure(state = "normal")
-        else:
-            CopyButton.configure(state = "disabled")
 
         match menu:
             case 0:
@@ -207,9 +221,10 @@ def func():
 
     def moveTo(num):
         global menu
-        clip = getClip(MainListBox.curselection()[0],menu)
-        cursor.execute("DELETE FROM " + getTable(menu) + " WHERE clip = ?;",(clip[0],))
-        writeClip(clip[0],num)
+        clip = getClip(MainListBox.curselection()[0])
+        cursor.execute("DELETE FROM " + getTable(menu) + " WHERE clip = ?;",(clip,))
+        MainListBox.delete(MainListBox.curselection()[0])
+        writeClip(clip,num)
 
 
     def exiting():
@@ -233,15 +248,16 @@ def func():
     PasswordsMenuButton = Button(frameMenu, text = "Passwords", command = lambda: changeMenu(3), font = s)
 
     CloseButton = Button(frameActions, text = "Close ClipSaver", command = exiting, font = s)
-    CopyButton = Button(frameActions, text = "Copy Selection", command = lambda: copy(menu), font = s)
+    CopyButton = Button(frameActions, text = "Copy Selection", command = copy, font = s)
+    DeleteButton = Button(frameActions, text = "Delete Selection", command = delete, font = s)
     ClearButton = Button(frameActions, text = "Clear Clipboard", command = lambda: clear(menu), font = s)
     
     MoveHeading = Label(frameMove, text = "Move Clip to:", font = s)
 
     UnclassifiedMoveButton = Button(frameMove, text = "Unclassified", command = lambda: moveTo(0), font = s, state = "disabled")
     PersonalMoveButton = Button(frameMove, text = "Personal", command = lambda: moveTo(1), font = s, state = "disabled")
-    WorkMoveButton = Button(frameMove, text = "Work", command = lambda: moveTo(3), font = s, state = "disabled")
-    PasswordsMoveButton = Button(frameMove, text = "Passwords", command = lambda: moveTo(4), font = s, state = "disabled")
+    WorkMoveButton = Button(frameMove, text = "Work", command = lambda: moveTo(2), font = s, state = "disabled")
+    PasswordsMoveButton = Button(frameMove, text = "Passwords", command = lambda: moveTo(3), font = s, state = "disabled")
     
 
     MainListBox = Listbox(r, height = 50, width = 100, selectmode = "SINGLE")
@@ -259,7 +275,8 @@ def func():
 
     CloseButton.grid(column = 0,row = 0,padx = 10)
     CopyButton.grid(column = 1,row = 0,padx = 10)
-    ClearButton.grid(column = 2,row = 0,padx = 10)
+    DeleteButton.grid(column = 2,row = 0,padx = 10)
+    ClearButton.grid(column = 3,row = 0,padx = 10)
 
     MainLabel.grid(row = 0,column = 0,pady = 10)
     frameMenu.grid(row = 1,column = 0)
@@ -274,7 +291,7 @@ def func():
 
 
 if __name__  ==  "__main__":
-    func()
+    main()
 
     # 0 -> unclassified
     # 1 -> personal
