@@ -1,4 +1,5 @@
 from tkinter import *
+from tkinter import ttk
 import pyperclip as ppc
 from memory_profiler import profile
 import tkinter.font as font
@@ -205,18 +206,36 @@ def main():
         return None
 
     def createList(tableName, tableType):
-        cursor.execute("CREATE TABLE IF EXISTS {} (dnt DATETIME NOT NULL, clip VARCHAR(65535))".format(tableName))
+        cursor.execute("CREATE TABLE IF NOT EXISTS {} (dnt DATETIME NOT NULL, clip VARCHAR(65535))".format(tableName))
 
+    def newList():
+        def submitList():
+            name = nameField.get()
+            pwd = "selected" in typePass.state()
+            udlWindow.destroy()
+            createList(name, pwd)
 
-    # def submitList():
-    #     name = nameField.get()
-    #     pwd = True if typePass.getboolean() else False
-    #     udlWindow.destroy()
-    #     createList(name, pwd)
-    #
-    #
-    # def newList():
-    #     udlWindow.mainloop()
+        udlWindow = Toplevel(mainWindow)
+        udlWindow.title("New List")
+        udlWindow.resizable(False, False)
+        udlWindow.configure(width=350, height=200)
+        mainFrame = Frame(udlWindow, padx=20, pady=20)
+        buttonFrame= Frame(mainFrame, padx=10, pady=10)
+        udlLabel = Label(mainFrame, text = "Create New List", padx=10, pady=10, font=("Arial", 20))
+        nameField = Entry(mainFrame, width = 30, justify = CENTER, name = "name", font=s)
+        typePass = ttk.Checkbutton(mainFrame, text = "Is this a password List?", variable=IntVar())
+        submitButton = Button(buttonFrame, text = "Submit", command = submitList, padx = 10, font=s)
+        cancelButton = Button(buttonFrame, text = "Cancel", command = udlWindow.destroy, padx = 10, font=s)
+
+        udlLabel.grid(row = 0, column = 0)
+        nameField.grid(row = 1, column = 0)
+        typePass.grid(row = 2, column = 0)
+        submitButton.grid(row = 0, column = 0)
+        cancelButton.grid(row = 0, column = 1)
+        buttonFrame.grid(row = 3, column = 0)
+
+        mainFrame.place(relx=0.5, rely=0.5, anchor=CENTER)
+
 
     def listRouter():
         global menu, prev
@@ -241,22 +260,8 @@ def main():
         mainWindow.destroy()
 
     mainWindow = Tk()
-
-    # udlWindow = Tk()
-    # udlWindow.title("New List")
-    # mainFrame = Frame(udlWindow)
-    # udlLabel = Label(mainFrame, text = "Create New List")
-    # nameField = Entry(mainFrame, width = 30, justify = LEFT, name = "name")
-    # typePass = Radiobutton(mainFrame, text = "Is this a password List?", value = "pwd")
-    # submitButton = Button(mainFrame, text = "Submit", command = submitList)
-    #
-    #
-    # udlLabel.grid(row = 0, column = 0)
-    # nameField.grid(row = 1, column = 0)
-    # typePass.grid(row = 2, column = 0)
-    # submitButton.grid(row = 3, column = 0)
-    #
-    # mainFrame.place(relx=0.5, rely=0.5, anchor=CENTER)
+    mainWindow.resizable(False, False)
+    mainWindow.configure(width = 1020, height = 950)
 
     mainWindow.title("ClipSaver")
     s = font.Font(family = "Arial", size = 15)
@@ -264,7 +269,8 @@ def main():
 
     root = Frame(mainWindow)
     frameMenu = Frame(root,pady = 10)
-    frameMove = Frame(root,pady = 10, padx = 5)
+    frameMiddle = Frame(root,pady = 10)
+    frameMove = Frame(frameMiddle,pady = 10, padx = 10)
     frameActions = Frame(root,pady = 10)
 
     MainLabel = Label(root, text = "ClipSaver", font = headingFont)
@@ -274,7 +280,7 @@ def main():
     WorkMenuButton = Button(frameMenu, text = "Work", command = lambda: changeMenu(2), font = s)
     PasswordsMenuButton = Button(frameMenu, text = "Passwords", command = lambda: changeMenu(3), font = s)
 
-    MainListBox = Listbox(root, height = 50, width = 100, selectmode = "SINGLE")
+    MainListBox = Listbox(frameMiddle, height = 50, width = 100, selectmode = "SINGLE")
     MoveHeading = Label(frameMove, text = "Move Clip to:", font = s)
 
     UnclassifiedMoveButton = Button(frameMove, text = "Unclassified", command = lambda: moveTo(0), font = s, state = "disabled")
@@ -286,7 +292,7 @@ def main():
     CopyButton = Button(frameActions, text = "Copy Selection", command = copy, font = s)
     DeleteButton = Button(frameActions, text = "Delete Selection", command = delete, font = s)
     ClearButton = Button(frameActions, text = "Clear Clipboard", command = lambda: clear(menu), font = s)
-    # NewButton = Button(frameActions, text = "New List", command = newList, font = s)
+    NewButton = Button(frameActions, text = "New List", command = newList, font = s)
 
     UnclassifiedMenuButton.grid(column = 0, row = 0, padx = 5)
     PersonalMenuButton.grid(column = 1, row = 0, padx = 5)
@@ -303,12 +309,13 @@ def main():
     CopyButton.grid(column = 1,row = 0,padx = 10)
     DeleteButton.grid(column = 2,row = 0,padx = 10)
     ClearButton.grid(column = 3,row = 0,padx = 10)
-    # NewButton.grid(column = 4,row = 0,padx = 10)
+    NewButton.grid(column = 4,row = 0,padx = 10)
 
     MainLabel.grid(row = 0,column = 0,pady = 10)
     frameMenu.grid(row = 1,column = 0)
-    MainListBox.grid(row = 2,column = 0)
-    frameMove.grid(row = 2,column = 1)
+    MainListBox.grid(row = 0,column = 0)
+    frameMove.grid(row = 0,column = 1)
+    frameMiddle.grid(row = 2,column = 0)
     frameActions.grid(row = 3,column = 0)
 
     root.place(relx = 0.5, rely = 0.5, anchor = "center")
