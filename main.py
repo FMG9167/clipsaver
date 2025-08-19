@@ -1,5 +1,7 @@
 from tkinter import *
 from tkinter import ttk
+from tkinter.ttk import Combobox
+
 import pyperclip as ppc
 from memory_profiler import profile
 import tkinter.font as font
@@ -14,6 +16,7 @@ latest = 0
 def main():
     mydb = sqlite3.connect('clipsaver.db')
     cursor = mydb.cursor()
+    cursor.execute('CREATE TABLE IF NOT EXISTS tables(tableName VARCHAR(50), type INTEGER)')
     cursor.execute(
         'CREATE TABLE IF NOT EXISTS unclassified(dnt DATETIME NOT NULL, '
         'clip VARCHAR(65535))')
@@ -49,19 +52,21 @@ def main():
                 return "passwords"
         return None
 
-    def getClip(Lid):
-        return MainListBox.get(Lid)
+    def getCurrentTable():
+        return getTable(0)
+
+    def getClip(ListIndex):
+        clip = MainListBox.get(ListIndex, ListIndex)
+        return clip[0]
 
     def writeClip(clip,num):
         dnt = time.strftime("%Y-%m-%d %H:%M:%S")
         numb = cursor.execute("SELECT count(*) FROM {}".format(getTable(num))).fetchone()[0]
-
         if numb>=50:
             cursor.execute("DELETE FROM {} WHERE dnt=?".format(getTable(num)),(cursor.execute("SELECT dnt FROM {} ORDER BY dnt DESC".format(getTable(num))).fetchone()[0],))
             MainListBox.delete(0,0)
 
         cursor.execute("INSERT INTO {} VALUES(?,?)".format(getTable(num)),(dnt,clip))
-
         mydb.commit()
 
     def getBoard(num):
@@ -81,15 +86,13 @@ def main():
 
     def copy():
         global latest
-
         latest = getClip(MainListBox.curselection()[0])
         ppc.copy(latest)
 
     def delete():
         global menu
-
         clip = getClip(MainListBox.curselection()[0])
-        cursor.execute("DELETE FROM {} WHERE clip=?".format(getTable(menu)), (clip,))
+        cursor.execute("DELETE FROM {} WHERE clip=?".format(getCurrentTable()), (clip,))
         MainListBox.delete(MainListBox.curselection()[0])
         mydb.commit()
 
@@ -100,7 +103,6 @@ def main():
 
         for i in range(records):
             result = query.fetchone()    # fetching rows one at a time instead of calling all the rows into memory
-
             if "day" in str(datetime.now() - datetime.strptime(result[0], "%Y-%m-%d %H:%M:%S")):
                 delL+=str(result[0])
 
@@ -114,7 +116,7 @@ def main():
         global menu, latest
         current = ppc.paste()
 
-        if current != latest and (time.strftime("%Y-%m-%d %H:%M:%S"), current) not in cursor.execute("SELECT dnt, clip FROM {}".format(getTable(menu))).fetchall():
+        if current != latest and (time.strftime("%Y-%m-%d %H:%M:%S"), current) not in cursor.execute("SELECT dnt, clip FROM {}".format(getCurrentTable())).fetchall():
             writeClip(current,menu)
             latest = current
             updateList(menu)
@@ -127,16 +129,12 @@ def main():
             CopyButton.configure(state = "disabled")
             DeleteButton.configure(state = "disabled")
             updateMoveFrame(1)
-
         deleteOldPwd()
-
         root.after(delay,mainLoop)
 
     def changeMenu(num):
         global menu
-
         menu = num
-
         match menu:
             case 0:
                 UnclassifiedMenuButton.configure(state = "disabled")
@@ -158,9 +156,7 @@ def main():
                 PersonalMenuButton.configure(state = "normal")
                 WorkMenuButton.configure(state = "normal")
                 PasswordsMenuButton.configure(state = "disabled")
-
         listRouter()
-
 
     def changeList(num):
         b = getBoard(num)
@@ -179,8 +175,10 @@ def main():
             PersonalMoveButton.configure(state = "disabled")
             WorkMoveButton.configure(state = "disabled")
             PasswordsMoveButton.configure(state = "disabled")
+            MoveButton.configure(state = "disabled")
             return ""
 
+        MoveButton.configure(state = "normal")
         match menu:
             case 0:
                 UnclassifiedMoveButton.configure(state = "disabled")
@@ -202,11 +200,12 @@ def main():
                 PersonalMoveButton.configure(state = "normal")
                 WorkMoveButton.configure(state = "normal")
                 PasswordsMoveButton.configure(state = "disabled")
-
         return None
+
 
     def createList(tableName, tableType):
         cursor.execute("CREATE TABLE IF NOT EXISTS {} (dnt DATETIME NOT NULL, clip VARCHAR(65535))".format(tableName))
+        cursor.execute("INSERT INTO tables VALUES (?,?)", (tableName,tableType))
 
     def newList():
         def submitList():
@@ -236,7 +235,6 @@ def main():
 
         mainFrame.place(relx=0.5, rely=0.5, anchor=CENTER)
 
-
     def listRouter():
         global menu, prev
 
@@ -250,9 +248,42 @@ def main():
         global menu
 
         clip = getClip(MainListBox.curselection()[0])
-        cursor.execute("DELETE FROM {} WHERE clip = ?;".format(getTable(menu)),(clip,))
-        MainListBox.delete(MainListBox.curselection()[0])
+        cursor.execute("DELETE FROM {} WHERE clip = ?;".format(getCurrentTable()),(clip,))
         writeClip(clip,num)
+
+
+    def moveClip(clip, newTable):
+        cursor.execute("DELETE FROM {} WHERE clip=?;".format(getCurrentTable()),(clip,))
+        MainListBox.delete(MainListBox.get(0,"end").index(clip))
+        cursor.execute("INSERT INTO {} VALUES (?,?)".format(newTable),(time.strftime("%Y-%m-%d %H:%M:%S"),clip))
+        mydb.commit()
+
+    def moveClipWindow(clip):
+        moveWindow = Toplevel(mainWindow)
+        moveWindow.title("Move Clip")
+        moveWindow.resizable(False, False)
+        moveWindow.configure(width=300, height=300)
+
+        tables = [x[0] for x in cursor.execute("SELECT tablename FROM tables").fetchall()]
+
+        mainFrame = Frame(moveWindow, padx=20, pady=20)
+        buttonFrame = Frame(mainFrame, padx=10, pady=10)
+        heading = Label(mainFrame, text = "Clip: "+clip, padx=10, pady=10, font=s)
+        text1 = Label(mainFrame, text = "Move to:", justify=LEFT, padx=10, pady=10, font=s)
+        tableList = ttk.Combobox(mainFrame, values=tables, state="readonly", font=s)
+        tableList.current(0)
+
+        buttonMove = Button(buttonFrame, text = "Move Clip", command = lambda: moveClip(clip, tableList.get()), padx = 10, font=s)
+        buttonCancel = Button(buttonFrame, text = "Cancel", command = moveWindow.destroy, font=s)
+
+        heading.grid(row = 0, column = 0)
+        text1.grid(row = 1, column = 0)
+        tableList.grid(row = 2, column = 0)
+        buttonMove.grid(row = 0, column = 0)
+        buttonCancel.grid(row = 0, column = 1)
+        buttonFrame.grid(row = 3, column = 0)
+        mainFrame.place(relx=0.5, rely=0.5, anchor=CENTER)
+
 
     def exiting():
         cursor.close()
@@ -275,18 +306,34 @@ def main():
 
     MainLabel = Label(root, text = "ClipSaver", font = headingFont)
 
+
+
+
     UnclassifiedMenuButton = Button(frameMenu, text = "Unclassified", command = lambda: changeMenu(0), font = s, state = "disabled")
     PersonalMenuButton = Button(frameMenu, text = "Personal", command = lambda: changeMenu(1), font = s)
     WorkMenuButton = Button(frameMenu, text = "Work", command = lambda: changeMenu(2), font = s)
     PasswordsMenuButton = Button(frameMenu, text = "Passwords", command = lambda: changeMenu(3), font = s)
 
-    MainListBox = Listbox(frameMiddle, height = 50, width = 100, selectmode = "SINGLE")
-    MoveHeading = Label(frameMove, text = "Move Clip to:", font = s)
+    MenuListBox = Listbox(frameMenu, height = 50, width = 50, selectmode = SINGLE, font = s)
 
+
+
+
+    MainListBox = Listbox(frameMiddle, height = 50, width = 100, selectmode = "SINGLE")
+
+
+
+
+    MoveHeading = Label(frameMove, text = "Move Clip to:", font = s)
     UnclassifiedMoveButton = Button(frameMove, text = "Unclassified", command = lambda: moveTo(0), font = s, state = "disabled")
     PersonalMoveButton = Button(frameMove, text = "Personal", command = lambda: moveTo(1), font = s, state = "disabled")
     WorkMoveButton = Button(frameMove, text = "Work", command = lambda: moveTo(2), font = s, state = "disabled")
     PasswordsMoveButton = Button(frameMove, text = "Passwords", command = lambda: moveTo(3), font = s, state = "disabled")
+
+
+    MoveButton = Button(frameMove, text = "Move Clip", command = lambda: moveClipWindow(MainListBox.get(MainListBox.curselection()[0])), font = s, state = "disabled")
+
+
 
     CloseButton = Button(frameActions, text = "Close ClipSaver", command = exiting, font = s)
     CopyButton = Button(frameActions, text = "Copy Selection", command = copy, font = s)
@@ -304,6 +351,7 @@ def main():
     PersonalMoveButton.grid(column = 0, row = 2, pady = 5)
     WorkMoveButton.grid(column = 0, row = 3, pady = 5)
     PasswordsMoveButton.grid(column = 0, row = 4, pady = 5)
+    MoveButton.grid(column = 0, row = 5, pady = 5)
 
     CloseButton.grid(column = 0,row = 0,padx = 10)
     CopyButton.grid(column = 1,row = 0,padx = 10)
