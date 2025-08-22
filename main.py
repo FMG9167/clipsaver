@@ -1,84 +1,64 @@
 from tkinter import *
 from tkinter import ttk
-
 import pyperclip as ppc
-from memory_profiler import profile
 import tkinter.font as font
-import sqlite3, time
+import sqlite3
 from datetime import datetime
 
-@profile
+latest=""
+
 def main():
     mydb = sqlite3.connect('clipsaver.db')
     cursor = mydb.cursor()
     delay = 50
 
-    def getCurrentTable():
-        print(MenuComboBox.get())
-        print(cursor.execute("SELECT * FROM tables").fetchall())
-        return MenuComboBox.get()
+    #
+    #       Basic Python
+    #
 
-    def getTable(index):
-        return MenuListBox.get(0,"end")[index]
+    def getCurrentTime():
+        now = datetime.now()
+        return now.strftime("%Y-%m-%d %H:%M:%S")
 
-    def getClip(ListIndex):
-        clip = MainListBox.get(ListIndex, ListIndex)
-        return clip[0]
+    def copyClip(clip):
+        ppc.copy(clip)
 
-    def copy():
-        ppc.copy(getClip(MainListBox.curselection()[0]))
+    def getCopiedClip():
+        return ppc.paste()
 
     #
     #       Database Access
     #
 
-    def createList(tableName, tableType):
-        cursor.execute("CREATE TABLE IF NOT EXISTS {} (dnt DATETIME NOT NULL, clip VARCHAR(65535))".format(tableName))
-        cursor.execute("INSERT INTO tables VALUES (?,?)", (tableName, tableType))
-        mydb.commit()
-
-    def tableGen(do=False):
-        if do:
-            length = cursor.execute("SELECT count(*) FROM tables WHERE type = True").fetchone()[0]
-            query = cursor.execute("SELECT tableName FROM tables WHERE type = True")
-        else:
-            length = cursor.execute("SELECT count(*) FROM tables").fetchone()[0]
-            query = cursor.execute("SELECT tableName FROM tables")
+    def getClipsGeneratorFromTable(tableName):
+        length = cursor.execute("SELECT count(*) FROM {}".format(tableName)).fetchone()[0]
+        query = cursor.execute("SELECT clip FROM {}".format(tableName))
         for i in range(length):
             yield query.fetchone()[0]
 
-    def delete():
-        clip = getClip(MainListBox.curselection()[0])
-        cursor.execute(f"DELETE FROM {getCurrentTable()} WHERE clip=?", (clip,))
-        MainListBox.delete(MainListBox.curselection()[0])
+    def createTable(tableName, tableType=0):
+        cursor.execute("CREATE TABLE IF NOT EXISTS {}(dnt DATETIME NOT NULL, clip VARCHAR(65335))".format(tableName))
+        if cursor.execute("SELECT * FROM tables WHERE tableName=?",(tableName,)).fetchone() is None:
+            cursor.execute("INSERT INTO tables VALUES (?,?)", (tableName,tableType))
         mydb.commit()
 
-    def clear(tableName):
-        cursor.execute(f"DELETE FROM {tableName}")
-        mydb.commit()
-        MainListBox.delete(0, MainListBox.size() + 1)
-
-    def writeClip(clip, tableName):
-        dnt = time.strftime("%Y-%m-%d %H:%M:%S")
-        numb = cursor.execute(f"SELECT count(*) FROM {tableName}").fetchone()[0]
-        if numb >= 50:
-            cursor.execute(f"DELETE FROM {tableName} WHERE dnt=?", (
-                cursor.execute(f"SELECT dnt FROM {tableName} ORDER BY dnt DESC").fetchone()[0],))
-            MainListBox.delete(0, 0)
-
-        cursor.execute(f"INSERT INTO {tableName} VALUES(?,?)", (dnt, clip))
+    def deleteTable(tableName):
+        cursor.execute("DROP TABLE IF EXISTS {}".format(tableName))
+        cursor.execute("DELETE FROM tables WHERE tableName=?", (tableName,))
         mydb.commit()
 
-    def getBoard(tableName):
-        records = cursor.execute(f"SELECT count(*) FROM {tableName}").fetchone()[0]
-        query = cursor.execute(f"SELECT clip FROM {tableName}")
-        for i in range(records if records <= 50 else 50):
-            yield query.fetchone()[0]  # memory optimization technique
+    def getTablesList():
+        out=[]
+        for i in cursor.execute("SELECT tableName FROM tables").fetchall():
+            out.append(i[0])
+        return out
 
-    def moveClip(clip, newTable):
-        cursor.execute("DELETE FROM {} WHERE clip=?;".format(getCurrentTable()), (clip,))
-        MainListBox.delete(MainListBox.get(0, "end").index(clip))
-        cursor.execute("INSERT INTO {} VALUES (?,?)".format(newTable), (time.strftime("%Y-%m-%d %H:%M:%S"), clip))
+    def insertClipToTable(tableName, clip):
+        cursor.execute("INSERT INTO {} VALUES (?,?)".format(tableName), (getCurrentTime(), clip))
+        mydb.commit()
+
+    def deleteClipFromTable(tableName, clip):
+        cursor.execute("DELETE FROM {} WHERE clip=?".format(tableName), (clip,))
         mydb.commit()
 
     #
@@ -86,12 +66,22 @@ def main():
     #
 
     def moveClipWindow(clip):
+        def submit():
+            MainListBox.delete(MainListBox.get(0,END).index(clip))
+            deleteClipFromTable(getCurrentTable(), clip)
+            insertClipToTable(tableList.get(), clip)
+            copyClip(clip)
+            global latest
+            latest=clip
+            moveWindow.destroy()
+
         moveWindow = Toplevel(mainWindow)
         moveWindow.title("Move Clip")
         moveWindow.resizable(False, False)
         moveWindow.configure(width=300, height=300)
 
         tables = [x[0] for x in cursor.execute("SELECT tablename FROM tables").fetchall()]
+        tables.remove(getCurrentTable())
 
         mainFrame = Frame(moveWindow, padx=20, pady=20)
         buttonFrame = Frame(mainFrame, padx=10, pady=10)
@@ -100,7 +90,7 @@ def main():
         tableList = ttk.Combobox(mainFrame, values=tables, state="readonly", font=s)
         tableList.current(0)
 
-        buttonMove = Button(buttonFrame, text="Move Clip", command=lambda: moveClip(clip, tableList.get()), padx=10,
+        buttonMove = Button(buttonFrame, text="Move Clip", command=submit, padx=10,
                             font=s)
         buttonCancel = Button(buttonFrame, text="Cancel", command=moveWindow.destroy, font=s)
 
@@ -115,10 +105,10 @@ def main():
     def newListWindow():
         def submitList():
             name = nameField.get()
-            pwd = "selected" in typePass.state()
+            pwd = 1 if "selected" in typePass.state() else 0
+            createTable(name, pwd)
+            del name, pwd
             udlWindow.destroy()
-            createList(name, pwd)
-            updateMenu()
 
         udlWindow = Toplevel(mainWindow)
         udlWindow.title("New List")
@@ -146,6 +136,7 @@ def main():
     #
 
     def exiting():
+        mydb.commit()
         cursor.close()
         mydb.close()
         mainWindow.destroy()
@@ -154,90 +145,99 @@ def main():
     #       App Algorithms
     #
 
-    def deleteList():
-        cursor.execute(f"DROP TABLE {getCurrentTable()}")
-        cursor.execute(f"DELETE FROM tables WHERE tableName={getCurrentTable()}")
-        mydb.commit()
-        updateMenu()
+    def getCurrentTable():
+        print(MenuComboBox.get())
+        return MenuComboBox.get()
 
-    def init():
-        cursor.execute('CREATE TABLE IF NOT EXISTS tables(tableName VARCHAR(50), type INTEGER)')
-        if not cursor.execute('SELECT * FROM tables').fetchall():
-            createList("List1", False)
-        mydb.commit()
+    def addClipsToListbox():
+        generator = getClipsGeneratorFromTable(getCurrentTable())
+        for clip in generator:
+            if clip not in MainListBox.get(0, END):
+                MainListBox.insert(END, clip)
+        del generator
 
-        updateMenu()
+    def updateTableCombobox(do=0):
+        if do:
+            selectedTable=MenuComboBox.get()
+        tables = getTablesList()
+        MenuComboBox['values'] = tables
+        if do:
+            MenuComboBox.set(selectedTable)
+        del tables
 
-        changeList(MenuComboBox.get())
+    def updateButtonStates():
+        if not MainListBox.curselection():
+            DeleteButton.configure(state=DISABLED)
+            CopyButton.configure(state=DISABLED)
+            MoveButton.configure(state=DISABLED)
+        else:
+            DeleteButton.configure(state=NORMAL)
+            CopyButton.configure(state=NORMAL)
+            MoveButton.configure(state=NORMAL)
 
-    def updateMenu():
-        tables = tableGen()
-        a = []
-        for i in tables:
-            a.append(i)
-        MenuComboBox['values'] = a
-        MenuComboBox.current(0)
-        del a, tables
+        if len(MenuComboBox['values']) == 1:
+            DeleteListButton.configure(state=DISABLED)
+        else:
+            DeleteListButton.configure(state=NORMAL)
 
-    def updateList(tableName):
-        newClip = cursor.execute(f"SELECT clip FROM {tableName} ORDER BY dnt DESC").fetchone()[0]
-        MainListBox.insert(MainListBox.size(), newClip)
-
-    def deleteOldPwd():
-        tables = tableGen(True)
-        for table in tables:
-            records = cursor.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
-            query = cursor.execute(f"SELECT * FROM {table}")
-            delL = ""
-
-            for i in range(records):
-                result = query.fetchone()  # fetching rows one at a time instead of calling all the rows into memory
-                if "day" in str(datetime.now() - datetime.strptime(result[0], "%Y-%m-%d %H:%M:%S")):
-                    delL += str(result[0])
-            del records, query
-
-            for i in delL:
-                cursor.execute(f"DELETE FROM {table} WHERE dnt=?", (str(i),))
-
-            if delL != "":
-                mydb.commit()
-
-            del delL
-
-    def changeList(tableName):
+    def clearMainListbox(e):
         MainListBox.delete(0, END)
 
-        b = getBoard(tableName)
-        d = MainListBox.get(0, "end")
+    def copySelectedClip():
+        copyClip(MainListBox.get(MainListBox.curselection()[0]))
 
-        for i in b:
-            if i not in d:
-                MainListBox.insert(0,i)
-        del b, d
+    def deleteSelectedClip():
+        deleteClipFromTable(getCurrentTable(), MainListBox.get(MainListBox.curselection()[0]))
+        MainListBox.delete(MainListBox.curselection()[0])
 
+    def clearCurrentTable():
+        cursor.execute("DELETE FROM {}".format(getCurrentTable()))
+        mydb.commit()
+        MainListBox.delete(0, END)
+
+    def deleteCurrentList():
+        deleteTable(getCurrentTable())
+        updateTableCombobox(1)
+        MenuComboBox.set(MenuComboBox['values'][0])
+
+    def checkForOldPasswords():
+        for i in cursor.execute("SELECT tableName FROM tables WHERE type=1").fetchall():
+            for j in cursor.execute("SELECT dnt FROM {}".format(i[0])).fetchall():
+                if "day" in str(datetime.strptime(getCurrentTime(), "%Y-%m-%d %H:%M:%S") - datetime.strptime(j[0],"%Y-%m-%d %H:%M:%S")):
+                    cursor.execute("DELETE FROM {} WHERE dnt = ?".format(i[0]), (j[0],))
+        mydb.commit()
+
+    def init():
+        cursor.execute("CREATE TABLE IF NOT EXISTS tables(tableName VARCHAR(64) NOT NULL, type INT NOT NULL)")
+        mydb.commit()
+        if cursor.execute("SELECT * FROM tables").fetchone() is None:
+            createTable("List1",0)
+
+            MenuComboBox['values'] = ['List1']
+            MenuComboBox.set('List1')
+
+        updateTableCombobox()
+
+        MenuComboBox.set(MenuComboBox['values'][0])
+
+        addClipsToListbox()
 
     def mainLoop():
-        deleteOldPwd()
+        updateTableCombobox()
 
-        current = ppc.paste()
+        addClipsToListbox()
 
-        latest = cursor.execute(f"SELECT clip FROM {getCurrentTable()}").fetchone()
-        if latest is None:
-            latest=[]
+        updateButtonStates()
 
-        if current in latest:
-            writeClip(current, getCurrentTable())
+        global latest
+        if getCopiedClip() not in MainListBox.get(0, END) and getCopiedClip() != latest:
+            insertClipToTable(getCurrentTable(), getCopiedClip())
+            latest = getCopiedClip()
 
-        if MainListBox.curselection() != ():
-            CopyButton.config(state=ACTIVE)
-            DeleteButton.config(state=ACTIVE)
-            MoveButton.config(state=ACTIVE)
-        else:
-            CopyButton.config(state=DISABLED)
-            DeleteButton.config(state=DISABLED)
-            MoveButton.config(state=DISABLED)
+        checkForOldPasswords()
 
         root.after(delay, mainLoop)
+
     #
     #       Main Window
     #
@@ -260,17 +260,16 @@ def main():
 
     MainListBox = Listbox(frameMiddle, height=50, width=100, selectmode="SINGLE")
 
-    MenuListBox = Listbox(frameMove, height=20, width=10, selectmode=SINGLE, font=s)
-    MenuComboBox = ttk.Combobox(frameMenu, width=30, height=20)
-    MenuComboBox.bind("<<ComboboxSelected>>", lambda e: changeList(MenuComboBox.get()))
-    DeleteListButton = Button(frameMove, text="Delete List", command=deleteList, font=s)
+    MenuComboBox = ttk.Combobox(frameMenu, width=30, height=20, state="readonly")
+    MenuComboBox.bind("<<ComboboxSelected>>", clearMainListbox)
+    DeleteListButton = Button(frameMove, text="Delete List", command=deleteCurrentList, font=s)
     NewButton = Button(frameMove, text=" New List ", command=newListWindow, font=s)
     MoveButton = Button(frameMove, text="Move Clip", command=lambda: moveClipWindow(MainListBox.get(MainListBox.curselection()[0])), font=s, state="disabled")
 
     CloseButton = Button(frameActions, text="Close ClipSaver", command=exiting, font=s)
-    CopyButton = Button(frameActions, text="Copy Selection", command=copy, font=s)
-    DeleteButton = Button(frameActions, text="Delete Selection", command=delete, font=s)
-    ClearButton = Button(frameActions, text="Clear Clipboard", command=lambda: clear(getCurrentTable()), font=s)
+    CopyButton = Button(frameActions, text="Copy Selection", command=copySelectedClip, font=s)
+    DeleteButton = Button(frameActions, text="Delete Selection", command=deleteSelectedClip, font=s)
+    ClearButton = Button(frameActions, text="Clear Clipboard", command=clearCurrentTable, font=s)
 
     MenuComboBox.grid(row=0, column=0)
 
@@ -293,7 +292,6 @@ def main():
     root.place(relx=0.5, rely=0.5, anchor="center")
 
     init()
-    # listRouter()
     mainLoop()
 
     mainWindow.mainloop()
